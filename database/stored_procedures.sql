@@ -45,27 +45,28 @@ BEGIN
             SET v_OduncTarihi = CURDATE();
             SET v_SonTeslimTarihi = DATE_ADD(v_OduncTarihi, INTERVAL 15 DAY);
             
+            -- Ödünç kaydı ekle (Trigger otomatik olarak stoku düşürür)
             INSERT INTO ODUNC (UyeID, KitapID, KullaniciID, OduncTarihi, SonTeslimTarihi)
             VALUES (p_UyeID, p_KitapID, p_KullaniciID, v_OduncTarihi, v_SonTeslimTarihi);
             
-            UPDATE KITAP
-            SET MevcutAdet = MevcutAdet - 1
-            WHERE KitapID = p_KitapID;
-            
-            INSERT INTO LOG_ISLEM (TabloAdi, IslemTipi, KullaniciID, Aciklama, YeniVeri)
-            VALUES (
-                'ODUNC',
-                'INSERT',
-                p_KullaniciID,
-                CONCAT('Yeni odunc verildi. Uye: ', p_UyeID, ', Kitap: ', p_KitapID),
-                JSON_OBJECT(
-                    'OduncID', LAST_INSERT_ID(),
-                    'UyeID', p_UyeID,
-                    'KitapID', p_KitapID,
-                    'OduncTarihi', v_OduncTarihi,
-                    'SonTeslimTarihi', v_SonTeslimTarihi
-                )
-            );
+            -- LOG_ISLEM tablosu için optional insert (hatayı yoksay)
+            BEGIN
+                DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN END;
+                INSERT INTO log_islem (TabloAdi, IslemTipi, KullaniciID, Aciklama, YeniVeri)
+                VALUES (
+                    'ODUNC',
+                    'INSERT',
+                    p_KullaniciID,
+                    CONCAT('Yeni odunc verildi. Uye: ', p_UyeID, ', Kitap: ', p_KitapID),
+                    JSON_OBJECT(
+                        'OduncID', LAST_INSERT_ID(),
+                        'UyeID', p_UyeID,
+                        'KitapID', p_KitapID,
+                        'OduncTarihi', v_OduncTarihi,
+                        'SonTeslimTarihi', v_SonTeslimTarihi
+                    )
+                );
+            END;
             
             COMMIT;
             
@@ -109,19 +110,18 @@ BEGIN
         SELECT 'HATA: Odunc kaydi bulunamadi veya zaten teslim edilmis!' AS Sonuc, 0 AS Basarili;
         ROLLBACK;
     ELSE
+        -- TeslimTarihi güncelle (Trigger otomatik olarak stoku artırır)
         UPDATE ODUNC
         SET TeslimTarihi = p_TeslimTarihi
         WHERE OduncID = p_OduncID;
         
-        UPDATE KITAP
-        SET MevcutAdet = MevcutAdet + 1
-        WHERE KitapID = v_KitapID;
-        
+        -- Gecikme hesapla
         SET v_GecikmeGunu = DATEDIFF(p_TeslimTarihi, v_SonTeslimTarihi);
         
         IF v_GecikmeGunu > 0 THEN
             SET v_CezaTutari = v_GecikmeGunu * 5.00;
             
+            -- Ceza ekle (Trigger otomatik olarak ToplamBorc'u günceller)
             INSERT INTO CEZA (OduncID, UyeID, Tutar, GecikmeGunu, Aciklama)
             VALUES (
                 p_OduncID,
@@ -132,24 +132,24 @@ BEGIN
             );
             
             SET v_CezaID = LAST_INSERT_ID();
-            
-            UPDATE UYE
-            SET ToplamBorc = ToplamBorc + v_CezaTutari
-            WHERE UyeID = v_UyeID;
         END IF;
         
-        INSERT INTO LOG_ISLEM (TabloAdi, IslemTipi, Aciklama, YeniVeri)
-        VALUES (
-            'ODUNC',
-            'UPDATE',
-            CONCAT('Kitap teslim alindi. Odunc ID: ', p_OduncID),
-            JSON_OBJECT(
-                'OduncID', p_OduncID,
-                'TeslimTarihi', p_TeslimTarihi,
-                'GecikmeGunu', v_GecikmeGunu,
-                'CezaTutari', IFNULL(v_CezaTutari, 0)
-            )
-        );
+        -- LOG_ISLEM tablosu için optional insert (hatayı yoksay)
+        BEGIN
+            DECLARE CONTINUE HANDLER FOR SQLEXCEPTION BEGIN END;
+            INSERT INTO log_islem (TabloAdi, IslemTipi, Aciklama, YeniVeri)
+            VALUES (
+                'ODUNC',
+                'UPDATE',
+                CONCAT('Kitap teslim alindi. Odunc ID: ', p_OduncID),
+                JSON_OBJECT(
+                    'OduncID', p_OduncID,
+                    'TeslimTarihi', p_TeslimTarihi,
+                    'GecikmeGunu', v_GecikmeGunu,
+                    'CezaTutari', IFNULL(v_CezaTutari, 0)
+                )
+            );
+        END;
         
         COMMIT;
         

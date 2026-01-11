@@ -80,3 +80,5 @@ INSERT INTO ODUNC (UyeID, KitapID, KullaniciID, OduncTarihi, SonTeslimTarihi, Te
 (7, 25, 1, '2025-11-20', '2025-12-05', '2025-12-10'),
 (8, 18, 2, '2025-12-14', '2025-12-29', NULL),
 (9, 5, 1, '2025-12-16', '2025-12-31', NULL);
+-- Burak Çelik'e 21 Aralık tarihinde alınmış ödünç kitap
+(4, 6, '2025-12-21', '2026-01-04', NULL);
